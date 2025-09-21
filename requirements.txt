@@ -1,0 +1,6 @@
+# YouTube Scraper Dependencies
+# 
+# 注意: youtube-dl 需要透過系統套件管理器安裝
+# macOS: brew install youtube-dl
+# 
+# 此腳本主要使用 Python 標準庫，無需額外 pip 套件
