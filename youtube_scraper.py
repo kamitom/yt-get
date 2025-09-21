@@ -26,6 +26,14 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 
+class ChannelError(Exception):
+    """統一的頻道錯誤處理"""
+    def __init__(self, message: str, error_type: str):
+        self.message = message
+        self.error_type = error_type
+        super().__init__(message)
+
+
 class YouTubeScraper:
     def __init__(self):
         self.user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
@@ -88,23 +96,34 @@ class YouTubeScraper:
             
         Returns:
             List of video dictionaries with metadata
+            
+        Raises:
+            ChannelError: When channel is not found or other errors occur
         """
         print(f"正在抓取頻道: {channel_url}")
         print(f"獲取影片數量: {count}")
         
-        # Use yt-dlp to get basic video info
         videos_url = f"{channel_url}/videos"
         cmd = [self.ytdlp_path, '--flat-playlist', '--print-json', videos_url]
         
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            
             if result.returncode != 0:
-                print(f"yt-dlp 錯誤: {result.stderr}")
-                return []
+                stderr = result.stderr.lower()
+                
+                if any(phrase in stderr for phrase in ['not found', 'does not exist', '404', 'channel not found', 'not available', 'private', 'does not have']):
+                    raise ChannelError(f"頻道不存在或無法存取: {channel_url}", "not_found")
+                elif any(phrase in stderr for phrase in ['network', 'timeout', 'connection', 'resolve']):
+                    raise ChannelError("網路連線問題，請檢查網路設定", "network")
+                else:
+                    raise ChannelError(f"yt-dlp 執行失敗: {result.stderr.strip()}", "unknown")
                 
             lines = result.stdout.strip().split('\n')
+            if not lines or not any(line.strip() for line in lines):
+                raise ChannelError(f"頻道沒有任何影片或頻道不存在: {channel_url}", "no_videos")
+                
             videos = []
-            
             for line in lines[:count]:
                 if line.strip():
                     try:
@@ -113,15 +132,18 @@ class YouTubeScraper:
                     except json.JSONDecodeError:
                         continue
                         
+            if not videos:
+                raise ChannelError(f"無法解析頻道影片資料: {channel_url}", "parse_error")
+                        
             print(f"成功獲取 {len(videos)} 部影片基本資訊")
             return videos
             
         except subprocess.TimeoutExpired:
-            print("yt-dlp 執行超時")
-            return []
+            raise ChannelError("請求超時，請檢查網路連線或稍後再試", "timeout")
+        except ChannelError:
+            raise
         except Exception as e:
-            print(f"執行 yt-dlp 時發生錯誤: {e}")
-            return []
+            raise ChannelError(f"執行 yt-dlp 時發生未預期錯誤: {e}", "unknown")
     
     def get_video_upload_date(self, video_id: str) -> Optional[str]:
         """
@@ -242,13 +264,12 @@ class YouTubeScraper:
             
         Returns:
             List of processed video dictionaries
+            
+        Raises:
+            ChannelError: When channel operations fail
         """
-        # Get basic video info
+        # Get basic video info (may raise ChannelError)
         videos = self.get_channel_videos(channel_url, count)
-        
-        if not videos:
-            print("無法獲取影片資訊")
-            return []
         
         # Process videos to add upload dates
         processed_videos = self.process_videos(videos)
@@ -266,21 +287,23 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 範例用法:
-  %(prog)s https://www.youtube.com/@airnekao --count 20 --output airnekao.csv
-  %(prog)s https://www.youtube.com/@CHIENYU我在路上 --count 10
-  %(prog)s "https://www.youtube.com/@laosong_channel" -c 15 -o laosong.csv
+  %(prog)s @airnekao --count 20 --output airnekao.csv
+  %(prog)s airnekao -c 20 -o airnekao.csv
+  %(prog)s "CHIENYU我在路上" --count 10
+  %(prog)s "@laosong_channel" -c 15 -o laosong.csv
+  %(prog)s https://www.youtube.com/@laosong_channel -c 15 -o laosong.csv
 
 注意事項:
   - 需要安裝 yt-dlp 工具
-  - 頻道 URL 需要包含 @ 符號 (例如: @channelname)
+  - 支援多種輸入格式: @channelname, channelname, 或完整 URL
   - 輸出的 CSV 檔案使用 UTF-8 編碼
   - 腳本會自動處理標題中的逗號問題
         """
     )
     
     parser.add_argument(
-        'channel_url',
-        help='YouTube 頻道 URL (例如: https://www.youtube.com/@channelname)'
+        'channel_name',
+        help='YouTube 頻道名稱或完整 URL (例如: @channelname 或 https://www.youtube.com/@channelname)'
     )
     
     parser.add_argument(
@@ -303,10 +326,31 @@ def main():
     
     args = parser.parse_args()
     
-    # Validate channel URL
-    if '@' not in args.channel_url or 'youtube.com' not in args.channel_url:
-        print("錯誤: 請提供有效的 YouTube 頻道 URL (包含 @ 符號)")
-        print("範例: https://www.youtube.com/@channelname")
+    # Convert channel name to full URL if needed
+    channel_input = args.channel_name.strip()
+    
+    if channel_input.startswith('https://www.youtube.com/@'):
+        # Full URL provided
+        channel_url = channel_input
+    elif channel_input.startswith('@'):
+        # Channel name with @ provided
+        channel_url = f"https://www.youtube.com/{channel_input}"
+    elif channel_input.startswith('youtube.com/@'):
+        # Partial URL without https
+        channel_url = f"https://www.{channel_input}"
+    else:
+        # Assume it's just the channel name without @
+        if not channel_input.startswith('@'):
+            channel_input = f"@{channel_input}"
+        channel_url = f"https://www.youtube.com/{channel_input}"
+    
+    # Validate final URL format
+    if '@' not in channel_url or 'youtube.com' not in channel_url:
+        print("錯誤: 無法識別的頻道格式")
+        print("支援格式:")
+        print("  @channelname")
+        print("  channelname")
+        print("  https://www.youtube.com/@channelname")
         sys.exit(1)
     
     # Create scraper and check yt-dlp availability
@@ -322,26 +366,42 @@ def main():
     
     try:
         videos = scraper.scrape_channel(
-            channel_url=args.channel_url,
+            channel_url=channel_url,
             count=args.count,
             output_file=args.output
         )
         
-        if videos:
-            print(f"\n成功處理 {len(videos)} 部影片")
-            if args.output:
-                print(f"CSV 檔案已儲存到 yt-csv 目錄")
-            else:
-                print("如需儲存到檔案，請使用 --output 參數")
+        print(f"\n成功處理 {len(videos)} 部影片")
+        if args.output:
+            print("CSV 檔案已儲存到 yt-csv 目錄")
         else:
-            print("未能獲取任何影片資訊")
-            sys.exit(1)
+            print("如需儲存到檔案，請使用 --output 參數")
+            
+    except ChannelError as e:
+        print(f"\n錯誤: {e.message}")
+        
+        if e.error_type == "not_found":
+            print("建議:")
+            print("  - 確認頻道 URL 正確")
+            print("  - 檢查頻道是否存在或公開可見")
+            print("  - 確保 URL 格式為: https://www.youtube.com/@channelname")
+        elif e.error_type == "network":
+            print("建議:")
+            print("  - 檢查網路連線")
+            print("  - 稍後再試")
+            print("  - 確認防火牆設定")
+        elif e.error_type == "timeout":
+            print("建議:")
+            print("  - 檢查網路連線速度")
+            print("  - 稍後再試")
+        
+        sys.exit(1)
             
     except KeyboardInterrupt:
         print("\n使用者中斷執行")
         sys.exit(1)
     except Exception as e:
-        print(f"執行時發生錯誤: {e}")
+        print(f"執行時發生未預期錯誤: {e}")
         sys.exit(1)
 
 

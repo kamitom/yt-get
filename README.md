@@ -44,17 +44,24 @@ pip install yt-dlp
 
 ### 基本用法
 ```bash
+# 最簡單的方式 - 只需頻道名稱
+python youtube_scraper.py channelname
+
+# 使用 @ 符號
+python youtube_scraper.py @channelname
+
+# 使用完整 URL (向後相容)
 python youtube_scraper.py https://www.youtube.com/@channelname
 ```
 
 ### 指定影片數量
 ```bash
-python youtube_scraper.py https://www.youtube.com/@channelname --count 20
+python youtube_scraper.py airnekao --count 20
 ```
 
 ### 儲存到 CSV 檔案
 ```bash
-python youtube_scraper.py https://www.youtube.com/@channelname --count 15 --output videos.csv
+python youtube_scraper.py @laosong_channel --count 15 --output videos.csv
 ```
 
 ### 查看幫助
@@ -65,13 +72,16 @@ python youtube_scraper.py --help
 ## 使用範例
 
 ```bash
-# 抓取旅圖奶爸頻道最新 20 部影片
-python youtube_scraper.py https://www.youtube.com/@airnekao --count 20 --output airnekao.csv
+# 抓取旅圖奶爸頻道最新 20 部影片 (最簡單方式)
+python youtube_scraper.py airnekao --count 20 --output airnekao.csv
 
-# 抓取 CHIENYU 頻道最新 10 部影片
-python youtube_scraper.py "https://www.youtube.com/@CHIENYU我在路上" --count 10
+# 抓取 CHIENYU 頻道最新 10 部影片 (中文頻道名)
+python youtube_scraper.py "CHIENYU我在路上" --count 10
 
-# 抓取老宋頻道最新 15 部影片並儲存
+# 抓取老宋頻道最新 15 部影片並儲存 (使用 @ 符號)
+python youtube_scraper.py @laosong_channel -c 15 -o laosong.csv
+
+# 使用完整 URL (向後相容)
 python youtube_scraper.py https://www.youtube.com/@laosong_channel -c 15 -o laosong.csv
 ```
 
@@ -87,7 +97,7 @@ source .venv/bin/activate
 ### 在虛擬環境中執行
 ```bash
 source .venv/bin/activate
-python youtube_scraper.py <channel_url> [options]
+python youtube_scraper.py <channel_name> [options]
 ```
 
 ## 輸出格式
@@ -104,15 +114,19 @@ CSV 檔案會自動儲存到 `yt-csv/` 目錄內，包含以下欄位：
 
 ## 注意事項
 
-1. **頻道 URL 格式**: 必須使用 `@` 格式的頻道 URL
-   - 正確: `https://www.youtube.com/@channelname`
-   - 錯誤: `https://www.youtube.com/channel/UCxxxxx`
+1. **頻道名稱格式**: 支援多種輸入格式
+   - 簡化: `channelname` (自動補全)
+   - 帶符號: `@channelname`
+   - 完整 URL: `https://www.youtube.com/@channelname`
+   - 不支援: `https://www.youtube.com/channel/UCxxxxx` (舊格式)
 
 2. **執行時間**: 獲取日期資訊需要逐一查詢影片頁面，可能需要一些時間
 
 3. **網路依賴**: 需要穩定的網路連線來存取 YouTube
 
 4. **編碼**: 輸出的 CSV 檔案使用 UTF-8 編碼
+
+5. **錯誤處理**: 程式會清楚提示頻道不存在、網路問題等錯誤情況
 
 ## 故障排除
 
@@ -135,9 +149,12 @@ brew install yt-dlp
 chmod +x youtube_scraper.py
 ```
 
-### 頻道 URL 錯誤
-- 確認 URL 包含 `@` 符號
+### 頻道錯誤
+當出現頻道相關錯誤時：
+- 確認頻道名稱正確 (不需要 `@` 符號)
 - 確認頻道存在且可公開存取
+- 試試不同的輸入格式: `channelname`、`@channelname`
+- 檢查網路連線是否穩定
 
 ## 授權
 
